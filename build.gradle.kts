@@ -176,7 +176,7 @@ bukkit {
     main = "org.icarus.angelicae.garden.Garden"
     foliaSupported = true
     apiVersion = "1.21"
-    authors = listOf("Jsinco", "Thorinwasher")
+    authors = listOf("Jsinco", "Thorinwasher", "Ph0sphorW")
     contributors = listOf("fLip")
     name = rootProject.name
     permissions {
