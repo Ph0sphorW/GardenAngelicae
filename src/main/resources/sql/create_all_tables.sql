@@ -5,16 +5,13 @@ CREATE TABLE IF NOT EXISTS plants (
     origin_x INTEGER,
     origin_y INTEGER,
     origin_z INTEGER,
+    chunk_x INTEGER,
+    chunk_z INTEGER,
     world_uuid BINARY(16),
-    transformation TEXT,
+    transformation INTEGER,
     track TEXT,
     fruits INTEGER,
     PRIMARY KEY (id)
-);
-
-CREATE INDEX IF NOT EXISTS world_index
-ON plants(
-    world_uuid
 );
 
 CREATE TABLE IF NOT EXISTS version

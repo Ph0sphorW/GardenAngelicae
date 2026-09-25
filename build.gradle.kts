@@ -21,40 +21,36 @@ val targetMinecraftVersions = listOf(
 )
 
 repositories {
+    mavenLocal() // BreweryShiroi, published by that repository with publishToMavenLocal
     mavenCentral()
-    maven("https://repo.breweryteam.dev/mirror")
+    // Hosts TheBrewingProject, one of the two APIs this plugin hooks into, so it is looked at early
+    maven("https://repo.breweryteam.dev/releases")
     maven("https://repo.jsinco.dev/releases")
     maven("https://storehouse.okaeri.eu/repository/maven-public/")
     maven("https://repo.papermc.io/repository/maven-public/")
-    maven("https://repo.breweryteam.dev/releases")
     maven("https://jitpack.io")
     maven("https://repo.momirealms.net/releases/")
-    maven("https://maven.devs.beer/")
     maven("https://nexus.phoenixdevt.fr/repository/maven-public/")
     maven("https://mvn.lumine.io/repository/maven-public/")
     maven("https://repo.nexomc.com/releases")
     maven("https://repo.oraxen.com/releases")
+    // Kept last: this host answers with HTTP 522 while its origin is down, and Gradle aborts the whole
+    // resolution on a server error instead of moving on, so nothing that needs a later repository may sit
+    // behind it.
+    maven("https://maven.devs.beer/")
+    // Kept last on purpose: this host is the slowest of the list, and Gradle walks the repositories in
+    // order, so anything resolvable elsewhere is found before it is ever contacted.
+    maven("https://repo.breweryteam.dev/mirror")
 }
 
 dependencies {
     compileOnly("io.papermc.paper:paper-api:1.21.4-R0.1-SNAPSHOT")
-    compileOnly("com.dre.brewery:BreweryX:3.4.10-SNAPSHOT")
+    compileOnly("com.dre.brewery:BreweryShiroi:4.2.1")
     compileOnly("dev.jsinco.brewery:thebrewingproject-bukkit:3.3.1")
     compileOnly("org.spongepowered:configurate-yaml:4.2.0")
 
-    compileOnly("net.momirealms:craft-engine-bukkit:26.5")
-    compileOnly("net.momirealms:craft-engine-core:26.5")
-    compileOnly("dev.lone:api-itemsadder:4.0.10")
-    compileOnly("net.Indyuce:MMOItems-API:6.10.1-SNAPSHOT")
-    compileOnly("io.lumine:MythicLib-dist:1.7.1-SNAPSHOT")
-    compileOnly("io.lumine:Mythic-Dist:5.10.1")
-    compileOnly("com.nexomc:nexo:1.15.0")
-    compileOnly("io.th0rgal:oraxen:1.190.0")
-
-
     compileOnly("org.projectlombok:lombok:1.18.30")
     annotationProcessor("org.projectlombok:lombok:1.18.30")
-    implementation(project(":api"))
     implementation("com.zaxxer:HikariCP:6.2.1")
 
     implementation("dev.thorinwasher.schem:schem-reader:1.0.0")
@@ -62,11 +58,22 @@ dependencies {
 
     compileOnly("org.xerial:sqlite-jdbc:3.47.2.0")
 
+    // Cloud command framework, https://github.com/Incendo/cloud
+    implementation(platform("org.incendo:cloud-minecraft-bom:2.0.0"))
+    implementation("org.incendo:cloud-paper")
+    implementation("org.incendo:cloud-minecraft-extras") {
+        // Adventure is provided by the server
+        exclude("net.kyori")
+    }
+
     testImplementation("org.junit.jupiter:junit-jupiter:5.12.1")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation("org.mockbukkit.mockbukkit:mockbukkit-v1.21:4.50.0")
     testImplementation("org.xerial:sqlite-jdbc:3.47.2.0")
     testImplementation("org.spongepowered:configurate-yaml:4.2.0")
+    // The schematic reader parses NBT but declares the library as runtime scope, so compiling against its
+    // signatures in a test needs it declared again. At runtime in the plugin it comes from the server.
+    testImplementation("net.kyori:adventure-nbt:4.17.0")
 }
 
 
@@ -91,7 +98,7 @@ tasks {
         doLast {
             val webhook = DiscordWebhook(System.getenv("DISCORD_WEBHOOK") ?: return@doLast, false)
             webhook.message = "@everyone"
-            webhook.embedTitle = "Garden - v${project.version}"
+            webhook.embedTitle = "GardenAngelicae - v${project.version}"
             webhook.embedDescription = readChangeLog()
             webhook.embedThumbnailUrl =
                 "https://cdn.modrinth.com/data/3TaOMjJ9/5e44a541ba38ce5d8567207a4b75183658756d57_96.webp"
@@ -123,6 +130,11 @@ tasks {
             "net.kyori.adventure.nbt",
             "net.kyori.examination"
         ).forEach { relocate(it, "${project.group}.lib.$it") }
+
+        // Relocated so the command framework does not clash with another plugin shipping a different version
+        relocate("org.incendo", "${project.group}.lib.cloud")
+        // Only used by the annotation processor of cloud, not needed at runtime
+        exclude("org/immutables/**")
     }
 
     test {
@@ -134,15 +146,34 @@ tasks {
         downloadPlugins {
             modrinth("worldedit", "DlD8WKr9")
             // modrinth("thebrewingproject", "3.3.1")
-            modrinth("breweryx", "3.7.0")
             modrinth("worldguard", "7.0.17")
         }
     }
 
 }
 
+// BreweryShiroi is the plugin this build hooks into, and it is not published anywhere, so the dev server
+// takes it from the local Maven repository instead (that project's `publishToMavenLocal` puts it there).
+val breweryShiroi: Configuration = configurations.create("breweryShiroi") {
+    isCanBeConsumed = false
+}
+
+dependencies {
+    breweryShiroi("com.dre.brewery:BreweryShiroi:4.2.1")
+}
+
+tasks.withType<xyz.jpenilla.runtask.task.AbstractRun>().configureEach {
+    dependsOn(breweryShiroi)
+    doFirst {
+        val pluginsDir = runDirectory.get().dir("plugins").asFile
+        pluginsDir.mkdirs()
+        pluginsDir.listFiles { file -> file.name.startsWith("BreweryShiroi") }?.forEach(File::delete)
+        breweryShiroi.resolve().forEach { it.copyTo(pluginsDir.resolve(it.name), overwrite = true) }
+    }
+}
+
 bukkit {
-    main = "dev.jsinco.brewery.garden.Garden"
+    main = "org.icarus.angelicae.garden.Garden"
     foliaSupported = true
     apiVersion = "1.21"
     authors = listOf("Jsinco", "Thorinwasher")
@@ -157,7 +188,7 @@ bukkit {
             )
         }
     }
-    softDepend = listOf("BreweryX", "TheBrewingProject")
+    softDepend = listOf("BreweryShiroi", "TheBrewingProject")
 }
 
 java {
@@ -172,7 +203,10 @@ hangarPublish {
     publications.register("plugin") {
         version.set(project.version.toString())
         channel.set("Release")
-        id.set(project.name)
+        // Pinned rather than taken from project.name: this is the slug of the existing Hangar project, and
+        // renaming the Gradle project must not repoint the publication at one that does not exist.
+        // Update it together with the Hangar listing if that is ever renamed too.
+        id.set("Garden")
         apiKey.set(System.getenv("HANGAR_TOKEN") ?: return@register)
         platforms {
             register(Platforms.PAPER) {
@@ -214,7 +248,7 @@ class DiscordWebhook(
     }
 
     var message: String = "content"
-    var username: String = "BreweryX Updates"
+    var username: String = "GardenAngelicae Updates"
     var avatarUrl: String = "https://github.com/breweryteam.png"
     var embedTitle: String = "Embed Title"
     var embedDescription: String = "Embed Description"

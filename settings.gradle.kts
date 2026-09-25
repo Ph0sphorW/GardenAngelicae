@@ -1,4 +1,1 @@
-rootProject.name = "Garden"
-
-
-include("api")
+rootProject.name = "GardenAngelicae"

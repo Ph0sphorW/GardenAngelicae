@@ -23,12 +23,6 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      - name: Publish API
-        run: |
-          ./gradlew publishAllPublicationsToBreweryteamRepository \
-          -PbreweryteamUsername=${{ secrets.BREWERY_REPO_USERNAME }} \
-          -PbreweryteamPassword=${{ secrets.BREWERY_REPO_PASSWORD }}
-
       - name: Publish Release
         run: "./gradlew publishRelease"
         env:
