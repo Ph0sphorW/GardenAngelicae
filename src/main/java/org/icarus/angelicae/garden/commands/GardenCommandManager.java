@@ -32,6 +32,8 @@ import java.util.Locale;
  */
 public class GardenCommandManager {
 
+    private static final MiniMessage MINI_MESSAGE = MiniMessage.miniMessage();
+
     private final Garden plugin;
     private final PaperCommandManager<Source> manager;
 
@@ -128,9 +130,14 @@ public class GardenCommandManager {
     /**
      * Resolves a translation and reduces it to plain text, which is what the command descriptions of the help
      * screen are compared against.
+     * <p>
+     * A key no language has is answered with the key itself. A gap in a language file is not a reason for the
+     * plugin to refuse to start, and showing the key names the entry that has to be added, see
+     * {@link GardenTranslator#getMiniMessageString(String, Locale)}.
      */
     public String description(String key) {
-        return MiniMessage.miniMessage().stripTags(message(key, GardenConfig.instance().language()));
+        String message = message(key, GardenConfig.instance().language());
+        return message == null ? key : MINI_MESSAGE.stripTags(message);
     }
 
     /**
