@@ -65,6 +65,18 @@ public interface PlantItem {
         return Garden.key("%s_%s".formatted(Garden.minimized(type.key()), itemType.toLowerCase(Locale.ROOT)));
     }
 
+    /**
+     * Whether the item is one of this plugin's, a seed or a fruit.
+     * <p>
+     * Only the markers on the item are looked at, not the plant type they name. That matters for an item that
+     * outlived its plant type, a head a plant left in the world whose type was later removed from the config
+     * being the usual case: it is still the plugin's item and still must not be put down as a decoration.
+     */
+    static boolean isGardenItem(ItemStack item) {
+        PersistentDataContainerView view = item.getPersistentDataContainer();
+        return view.has(PLANT_TYPE_KEY) || view.has(ITEM_TYPE_KEY);
+    }
+
     static boolean isFruit(ItemStack item) {
         PersistentDataContainerView view = item.getPersistentDataContainer();
         return view.has(ITEM_TYPE_KEY) && view.get(ITEM_TYPE_KEY, PersistentDataType.STRING).equalsIgnoreCase(PlantItemType.FRUIT.name());

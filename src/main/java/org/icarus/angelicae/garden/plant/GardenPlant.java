@@ -7,6 +7,7 @@ import org.icarus.angelicae.garden.configuration.GardenConfig;
 import org.icarus.angelicae.garden.persist.GardenPlantDataType;
 import org.icarus.angelicae.garden.persist.PlantPdcType;
 import org.icarus.angelicae.garden.persist.StorageSolution;
+import org.icarus.angelicae.garden.plant.item.FruitPlacementData;
 import org.icarus.angelicae.garden.plant.item.PlantItem;
 import org.icarus.angelicae.garden.plant.item.PlayerHeadBased;
 import org.icarus.angelicae.garden.structure.PlantStructure;
@@ -42,7 +43,7 @@ public class GardenPlant {
     private final String track;
     private int age;
     private boolean bloomed = false;
-    private final List<PlacedFruitDisplays> placedFruits = new ArrayList<>();
+    private final List<PlacedFruit> placedFruits = new ArrayList<>();
     private int expectedFruits;
     private StorageSolution currentStorage = null;
 
@@ -81,9 +82,16 @@ public class GardenPlant {
         this.structure = structure;
         this.expectedFruits = fruits;
         this.currentStorage = currentStorage;
-        if (fruits > 0) {
+        // A fruit that is a block sits in the chunk and is still standing after a reload, so the plant looks
+        // for the ones it left behind rather than assuming it lost them. Without that it would grow a second
+        // crop on top of the first, and every fruit standing there could be picked again.
+        if (fruits > 0 || FruitPlacementData.placesBlocks(type.fruitItem())) {
             Bukkit.getGlobalRegionScheduler().run(Garden.getInstance(), t -> {
-                placedFruits.addAll(placeFruits(fruits));
+                placedFruits.addAll(findStandingFruits());
+                expectedFruits = Math.max(expectedFruits, placedFruits.size());
+                if (expectedFruits > placedFruits.size()) {
+                    placedFruits.addAll(placeFruits(expectedFruits - placedFruits.size()));
+                }
             });
         }
     }
@@ -109,12 +117,12 @@ public class GardenPlant {
         int validCount = (int) placedFruits.stream()
                 .filter(placedFruit -> !placedFruit.hasDepopulated())
                 .count();
-        List<PlacedFruitDisplays> toRemove = placedFruits
+        List<PlacedFruit> toRemove = placedFruits
                 .stream()
-                .filter(PlacedFruitDisplays::hasDepopulated)
+                .filter(PlacedFruit::hasDepopulated)
                 .toList();
         int toPopulate = expectedFruits - validCount;
-        placedFruits.removeIf(PlacedFruitDisplays::hasDepopulated);
+        placedFruits.removeIf(PlacedFruit::hasDepopulated);
         boolean fallFruit = GardenConfig.instance().fallFruit() && ThreadLocalRandom.current().nextInt(20) == 0;
         if (toPopulate > 0 || fallFruit) {
             Bukkit.getRegionScheduler().run(Garden.getInstance(), structure.origin(), t -> {
@@ -125,14 +133,14 @@ public class GardenPlant {
                     placedFruits.addAll(placeFruits(toPopulate));
                 }
                 if (!placedFruits.isEmpty() && fallFruit) {
-                    PlacedFruitDisplays toDrop = placedFruits.remove(ThreadLocalRandom.current().nextInt(placedFruits.size()));
+                    PlacedFruit toDrop = placedFruits.remove(ThreadLocalRandom.current().nextInt(placedFruits.size()));
                     toDrop.remove();
                     expectedFruits--;
                     type.fruitItem().item(PlantItem.PlantItemType.FRUIT, type)
-                            .ifPresent(item -> toDrop.interactionBox().getWorld().dropItem(toDrop.interactionBox().getLocation().toCenterLocation(), item));
+                            .ifPresent(item -> toDrop.location().getWorld().dropItem(toDrop.location().toCenterLocation(), item));
                     updatePersistently(Garden.getInstance().getGardenPlantDataType());
                 }
-                toRemove.forEach(PlacedFruitDisplays::remove);
+                toRemove.forEach(PlacedFruit::remove);
             });
         }
     }
@@ -247,7 +255,38 @@ public class GardenPlant {
         updatePersistently(Garden.getInstance().getGardenPlantDataType());
     }
 
-    private List<PlacedFruitDisplays> placeFruits(int amount) {
+    /**
+     * The fruits of this plant that are still standing in the world.
+     * <p>
+     * A fruit that is a block belongs to the chunk, so it outlives the plant instance that placed it and has
+     * to be picked back up when the plant is built again. Only fruits beside the plant's own leaves count,
+     * which is what keeps two plants of the same kind from claiming each other's.
+     */
+    private List<PlacedFruit> findStandingFruits() {
+        if (!structure.origin().isChunkLoaded() || !type.bearFruits()) {
+            return List.of();
+        }
+        List<BlockFace> placement = type.fruitPlacement().vectors();
+        List<PlacedFruit> standing = new ArrayList<>();
+        structure.forEachBlock(LEAVES, (x, y, z, state) -> {
+            Block leaf = structure.world().getBlockAt(x, y, z);
+            if (!Tag.LEAVES.isTagged(leaf.getType())) {
+                return true;
+            }
+            for (BlockFace relative : placement) {
+                Block candidate = leaf.getRelative(relative);
+                PlantType found = PlayerHeadBased.getPlantType(candidate);
+                if (found == null || !found.key().equals(type.key())) {
+                    continue;
+                }
+                standing.add(new PlacedFruitBlock(candidate, type.key()));
+            }
+            return true;
+        });
+        return standing;
+    }
+
+    private List<PlacedFruit> placeFruits(int amount) {
         if (!structure.origin().isChunkLoaded() || !type.bearFruits() || !placedFruits.isEmpty()) {
             return List.of();
         }
@@ -257,7 +296,7 @@ public class GardenPlant {
         }
         PlantItem fruit = type.fruitItem();
         List<BlockFace> placement = type.fruitPlacement().vectors();
-        List<PlacedFruitDisplays> output = new ArrayList<>();
+        List<PlacedFruit> output = new ArrayList<>();
         int[] count = {0};
         structure.forEachBlock((x, y, z, state) -> {
             if (amount != -1 && count[0] >= amount) {
@@ -316,7 +355,11 @@ public class GardenPlant {
     }
 
     public void clearBoundEntities() {
-        placedFruits.forEach(PlacedFruitDisplays::remove);
+        // Only what the world would otherwise lose: a fruit that is a block belongs to the chunk and is picked
+        // up again when the plant is loaded, so taking it down here would throw away the plant's harvest
+        placedFruits.stream()
+                .filter(PlacedFruit::isTransient)
+                .forEach(PlacedFruit::remove);
         expectedFruits = 0;
     }
 }

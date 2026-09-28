@@ -23,7 +23,8 @@ import org.joml.Vector3f;
 import java.util.List;
 import java.util.UUID;
 
-public record PlacedFruitDisplays(List<ItemDisplay> itemDisplays, Entity interactionBox, Key plantType) {
+public record PlacedFruitDisplays(List<ItemDisplay> itemDisplays, Entity interactionBox, Key plantType)
+    implements PlacedFruit {
 
     public static final NamespacedKey INTERACTION_ENTITY_DATA = Garden.key("linked_entities");
     public static final NamespacedKey OWNING_PLANT = Garden.key("owner");
@@ -80,13 +81,25 @@ public record PlacedFruitDisplays(List<ItemDisplay> itemDisplays, Entity interac
     }
 
 
+    @Override
     public boolean hasDepopulated() {
         return itemDisplays.stream().anyMatch(Entity::isDead) || interactionBox.isDead();
     }
 
+    @Override
+    public boolean isTransient() {
+        return true;
+    }
+
+    @Override
     public void remove() {
         itemDisplays.forEach(Entity::remove);
         interactionBox.remove();
+    }
+
+    @Override
+    public Location location() {
+        return interactionBox.getLocation();
     }
 
     private static Vector3f toVector4f(Vector vector) {

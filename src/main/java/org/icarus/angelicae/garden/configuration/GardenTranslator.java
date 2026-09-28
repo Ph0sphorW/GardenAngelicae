@@ -3,6 +3,7 @@ package org.icarus.angelicae.garden.configuration;
 import com.google.common.base.Preconditions;
 import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.minimessage.translation.MiniMessageTranslator;
+import org.icarus.angelicae.garden.Garden;
 import org.icarus.angelicae.garden.utility.Logger;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
@@ -29,6 +30,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -41,6 +43,9 @@ public class GardenTranslator extends MiniMessageTranslator {
 
     /** What every language file is called, the bundled ones and the ones in the locale directory alike. */
     private static final String FILE_SUFFIX = ".lang.properties";
+
+    /** The namespace Garden's own messages live in. */
+    private static final String GARDEN_KEY_PREFIX = Garden.NAMESPACE + ".";
 
     /**
      * The language the bundled translations are written in.
@@ -64,6 +69,15 @@ public class GardenTranslator extends MiniMessageTranslator {
     /** Keys already reported as untranslated, so a gap is logged once instead of once per message. */
     private final Set<String> reportedMissingKeys = ConcurrentHashMap.newKeySet();
 
+    /**
+     * Every key Garden has text for, taken from the language files and from the bundled ones.
+     * <p>
+     * A key outside this set is none of Garden's business. The translator is asked for every key the server
+     * sends, the item names of vanilla included, and answering those with a warning would fill the log with
+     * complaints about entries Garden was never meant to hold.
+     */
+    private Set<String> ownedKeys = Set.of();
+
     private final File localeDirectory;
 
     public GardenTranslator(File localeDirectory) {
@@ -74,6 +88,27 @@ public class GardenTranslator extends MiniMessageTranslator {
         syncLangFiles();
         loadLangFiles();
         loadBundledTranslations();
+        collectOwnedKeys();
+    }
+
+    /**
+     * Gathers the keys Garden answers for: everything the language files hold, plus every key of the
+     * {@code garden} namespace so that a message added to the code is still reported while it is missing from
+     * the files.
+     */
+    private void collectOwnedKeys() {
+        Set<String> keys = new HashSet<>();
+        for (Properties properties : translations.values()) {
+            keys.addAll(properties.stringPropertyNames());
+        }
+        for (Properties properties : bundledTranslations.values()) {
+            keys.addAll(properties.stringPropertyNames());
+        }
+        this.ownedKeys = Set.copyOf(keys);
+    }
+
+    private boolean owns(String key) {
+        return key.startsWith(GARDEN_KEY_PREFIX) || ownedKeys.contains(key);
     }
 
     private void syncLangFiles() {
@@ -222,6 +257,11 @@ public class GardenTranslator extends MiniMessageTranslator {
 
     @Override
     public @Nullable String getMiniMessageString(@NonNull String key, @NonNull Locale locale) {
+        if (!owns(key)) {
+            // Someone else's key, most often a vanilla one. Saying nothing lets the other sources answer,
+            // which is what keeps the server's own translations working.
+            return null;
+        }
         String message = lookup(key, locale);
         if (message == null) {
             // Whoever asked still needs to be told something, the key itself, so the log entry here is what
@@ -265,7 +305,7 @@ public class GardenTranslator extends MiniMessageTranslator {
 
     private void reportMissingKey(String key, Locale locale) {
         if (reportedMissingKeys.add(key)) {
-            Logger.logWarn("No translation for '%s' in %s, showing the key itself".formatted(key, locale.toLanguageTag()));
+            Logger.logWarn("No translation for '%s' in %s".formatted(key, locale.toLanguageTag()));
         }
     }
 }

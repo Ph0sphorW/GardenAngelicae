@@ -30,6 +30,7 @@ import org.bukkit.event.block.BlockSpreadEvent;
 import org.bukkit.event.block.LeavesDecayEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.world.StructureGrowEvent;
+import org.jspecify.annotations.Nullable;
 
 import java.util.Collection;
 import java.util.List;
@@ -78,12 +79,58 @@ public class BlockEventListener implements Listener {
             chosen.seedItem().item(PlantItem.PlantItemType.SEEDS, chosen)
                     .ifPresent(item -> block.getWorld().dropItem(block.getLocation().toCenterLocation(), item));
         }
-        checkFruit(block);
+        if (harvestFruit(block)) {
+            // The fruit is the plugin's, so the block is taken by the plugin as well instead of being broken
+            // the way a decoration would be
+            event.setCancelled(true);
+            return;
+        }
         GardenPlant gardenPlant = gardenRegistry.getByLocation(block);
         if (gardenPlant == null) {
             return;
         }
         checkAlive(gardenPlant);
+    }
+
+    /**
+     * Picks a fruit the player broke off a plant, if the block was one.
+     *
+     * @return Whether the block was a fruit and has been dealt with
+     */
+    private boolean harvestFruit(Block block) {
+        PlantType plantType = PlayerHeadBased.getPlantType(block);
+        if (plantType == null) {
+            return false;
+        }
+        dropFruit(block, plantType);
+        return true;
+    }
+
+    /**
+     * Takes a fruit out of the world and hands it to the plant it belongs to, so that the plant knows it no
+     * longer bears that fruit.
+     */
+    private void dropFruit(Block block, PlantType plantType) {
+        block.setType(Material.AIR);
+        plantType.fruitItem().item(PlantItem.PlantItemType.FRUIT, plantType)
+                .ifPresent(item -> block.getWorld().dropItem(block.getLocation().toCenterLocation(), item));
+        GardenPlant owning = owningPlant(block, plantType);
+        if (owning != null) {
+            owning.registerFruitPicked();
+        }
+    }
+
+    /**
+     * The plant a fruit belongs to, which is the plant standing next to it.
+     */
+    private @Nullable GardenPlant owningPlant(Block fruit, PlantType plantType) {
+        for (BlockFace blockFace : FRUIT_FACES) {
+            GardenPlant plant = gardenRegistry.getByLocation(fruit.getRelative(blockFace.getOppositeFace()));
+            if (plant != null && plant.getType().key().equals(plantType.key())) {
+                return plant;
+            }
+        }
+        return null;
     }
 
     @EventHandler(ignoreCancelled = true)
@@ -127,7 +174,12 @@ public class BlockEventListener implements Listener {
 
     @EventHandler(ignoreCancelled = true)
     public void onPlayerPlace(BlockPlaceEvent event) {
-        if (!EventListeners.IGNORED_EVENTS.contains(event) && PlantItem.plantItemKey(event.getItemInHand()) != null) {
+        if (EventListeners.IGNORED_EVENTS.contains(event)) {
+            return;
+        }
+        // Asked of the item rather than of the plant type it names, so that a seed or fruit whose plant type
+        // is gone is still kept out of the world
+        if (PlantItem.isGardenItem(event.getItemInHand())) {
             event.setCancelled(true);
         }
     }
@@ -169,10 +221,17 @@ public class BlockEventListener implements Listener {
     }
 
     private void checkFruit(Block block) {
-        if (PlayerHeadBased.getPlantType(block) == null) {
+        PlantType plantType = PlayerHeadBased.getPlantType(block);
+        if (plantType == null) {
             return;
         }
+        // Something other than a player took the fruit away, so nothing is handed out for it, but the plant
+        // still has to be told that it no longer bears it
         block.setType(Material.AIR);
+        GardenPlant owning = owningPlant(block, plantType);
+        if (owning != null) {
+            owning.registerFruitPicked();
+        }
     }
 
     private void checkSurroundingFruits(Block block) {
@@ -188,9 +247,7 @@ public class BlockEventListener implements Listener {
             if (possibleFruit.getBlockData() instanceof WallSkull wallSkull && blockFace != wallSkull.getFacing()) {
                 continue;
             }
-            possibleFruit.setType(Material.AIR);
-            plantType.fruitItem().item(PlantItem.PlantItemType.FRUIT, plantType)
-                    .ifPresent(item -> possibleFruit.getWorld().dropItem(possibleFruit.getLocation().toCenterLocation(), item));
+            dropFruit(possibleFruit, plantType);
         }
     }
 }

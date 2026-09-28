@@ -39,6 +39,7 @@ import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -173,6 +174,27 @@ public class EventListeners implements Listener {
         clickedBlock.setType(Material.AIR);
         plantType.fruitItem().item(PlantItem.PlantItemType.FRUIT, plantType)
                 .ifPresent(item -> clickedBlock.getWorld().dropItem(clickedBlock.getLocation().toCenterLocation(), item));
+        // A plant that is not told it lost a fruit will grow the fruit back on top of the ones still standing
+        GardenPlant owning = owningPlant(clickedBlock, plantType);
+        if (owning != null) {
+            owning.registerFruitPicked();
+        }
+    }
+
+    /**
+     * The plant a fruit belongs to, which is the plant standing next to it.
+     */
+    private @Nullable GardenPlant owningPlant(Block fruit, PlantType plantType) {
+        for (BlockFace blockFace : BlockFace.values()) {
+            if (!blockFace.isCartesian()) {
+                continue;
+            }
+            GardenPlant plant = gardenRegistry.getByLocation(fruit.getRelative(blockFace));
+            if (plant != null && plant.getType().key().equals(plantType.key())) {
+                return plant;
+            }
+        }
+        return null;
     }
 
     private boolean handleSeedPlacement(Player player, EquipmentSlot hand, ItemStack itemInHand, Block clickedBlock) {
