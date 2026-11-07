@@ -22,7 +22,9 @@ public class GrowthManager {
         Random random = ThreadLocalRandom.current();
         for (GardenPlant plant : registry.getPlants()) {
             if (plant.isFullyGrown()) {
-                if (random.nextDouble() > 1 - Math.pow(0.5, (double) 400 / plant.getType().growthTime())) {
+                // In ticks
+                if (random.nextDouble() >
+                        1 - Math.pow(0.5, (double) 400 / plant.getType().growthTime())) {
                     continue;
                 }
                 Bukkit.getRegionScheduler().run(Garden.getInstance(), plant.origin(), t -> {
@@ -35,9 +37,7 @@ public class GrowthManager {
             } else {
                 double probability = 1 - Math.pow(0.5, (double) 200 / plant.getType().growthTime());
                 if (random.nextDouble() < probability) {
-                    Bukkit.getRegionScheduler().run(Garden.getInstance(), plant.origin(), t -> {
-                        plant.incrementGrowthStage(1, registry, dataType);
-                    });
+                    Bukkit.getRegionScheduler().run(Garden.getInstance(), plant.origin(), t -> plant.incrementGrowthStage(1, registry, dataType));
                 }
             }
         }

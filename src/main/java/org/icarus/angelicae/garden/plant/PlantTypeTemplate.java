@@ -62,13 +62,13 @@ import java.util.regex.Pattern;
 @Accessors(fluent = true)
 @NullMarked
 @ConfigSerializable
-@SuppressWarnings({"unused", "NotNullFieldNotInitialized"})
+@SuppressWarnings({"unused", "NotNullFieldNotInitialized", "UnstableApiUsage"})
 public final class PlantTypeTemplate {
 
     private static final String SCHEM_EXTENSION = ".schem";
     private static final String RANDOM_TRACK = "*";
     private static final String PLANT_FILE = "plant.yml";
-    // Case insensitive to match the extension check, so a file that one accepts is not rejected by the other
+    // Case-insensitive to match the extension check, so a file that one accepts is not rejected by the other
     private static final Pattern STAGE_NUMBER =
         Pattern.compile("(\\d+)(?=\\D*\\.schem$)", Pattern.CASE_INSENSITIVE);
 

@@ -23,6 +23,7 @@ import static org.icarus.angelicae.garden.plant.PlacedFruitDisplays.OWNING_PLANT
 import static org.icarus.angelicae.garden.plant.item.PlantItem.ITEM_TYPE_KEY;
 import static org.icarus.angelicae.garden.plant.item.PlantItem.PLANT_TYPE_KEY;
 
+@SuppressWarnings("UnstableApiUsage")
 public sealed interface FruitPlacementData {
 
     Optional<PlacedFruit> place(Block relative, BlockFace facing, UUID owningPlant, PlantType plantType);
@@ -57,7 +58,7 @@ public sealed interface FruitPlacementData {
                              Consumer<ItemStack> extraModifications, float placedScale) implements FruitPlacementData {
 
         @Override
-        public Optional<PlacedFruit> place(Block relative, BlockFace facing, UUID owningPlant, PlantType plantType) {
+        public Optional<PlacedFruit> place(Block relative, BlockFace facing, UUID owningPlant, PlantType plantType)  {
             return ItemResolver.resolve(materialKey)
                     .map(item -> {
                         extraModifications.accept(item);

@@ -30,6 +30,7 @@ import java.util.Locale;
  * a client that has a translation for the key sees its own language instead of the server's, which is what
  * {@code clientSidedTranslations} in the config is about.
  */
+@SuppressWarnings("UnstableApiUsage")
 public class GardenCommandManager {
 
     private static final MiniMessage MINI_MESSAGE = MiniMessage.miniMessage();
@@ -45,14 +46,6 @@ public class GardenCommandManager {
         this.manager = PaperCommandManager.builder(PaperSimpleSenderMapper.simpleSenderMapper())
             .executionCoordinator(ExecutionCoordinator.simpleCoordinator())
             .buildOnEnable(plugin);
-
-        // Cloud ships English defaults for its own captions and reports them as plain text. Answering them
-        // from the language file instead puts the messages in the hands of whoever translates Garden, and
-        // leaves anything not translated to the English default.
-        //
-        // The provider of `TranslatableCaption` looks like the tool for this, but it only recognizes captions
-        // that were created as TranslatableCaption themselves; Cloud's own captions are not, so it steps
-        // aside for every message that matters here.
         this.manager.captionRegistry().registerProvider((caption, sender) ->
             message(caption.key(), localeOf(sender)));
         MinecraftExceptionHandler.create(Source::source)

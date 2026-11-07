@@ -23,18 +23,15 @@ import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockType;
 import org.bukkit.block.data.BlockData;
+import org.bukkit.persistence.PersistentDataContainer;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Predicate;
 
 @Getter
 @ToString
+@SuppressWarnings("UnstableApiUsage")
 public class GardenPlant {
 
     private final UUID id;
@@ -184,23 +181,25 @@ public class GardenPlant {
                 currentStorage = StorageSolution.PDC;
             }
             Chunk chunk = structure.origin().getChunk();
-            List<GardenPlant> plants;
+            PersistentDataContainer pdc = chunk.getPersistentDataContainer();
+            // The stored entries stay bytes: reading them back as plants would rebuild every plant in the
+            // chunk, and rebuilding one places its fruit into the world a second time.
+            List<byte[]> plants;
             try {
-                plants = chunk
-                        .getPersistentDataContainer()
-                        .get(PlantPdcType.PLANT_KEY, PlantPdcType.PLANT_LIST_TYPE);
+                plants = pdc.get(PlantPdcType.PLANT_KEY, PlantPdcType.PLANT_LIST_TYPE);
             } catch (IllegalArgumentException e) {
                 plants = null;
             }
-            List<GardenPlant> gardenPlants;
+            List<byte[]> stored;
             if (plants == null) {
-                gardenPlants = new ArrayList<>();
+                stored = new ArrayList<>();
             } else {
-                gardenPlants = new ArrayList<>(plants);
+                stored = new ArrayList<>(plants);
             }
-            gardenPlants.removeIf(plant -> plant.id.equals(id));
-            gardenPlants.add(this);
-            chunk.getPersistentDataContainer().set(PlantPdcType.PLANT_KEY, PlantPdcType.PLANT_LIST_TYPE, gardenPlants);
+            // An id of null means bytes this version did not write, which are left in place
+            stored.removeIf(plant -> id.equals(PlantPdcType.plantId(plant)));
+            stored.add(PlantPdcType.serialize(this, pdc.getAdapterContext()));
+            pdc.set(PlantPdcType.PLANT_KEY, PlantPdcType.PLANT_LIST_TYPE, stored);
         }
     }
 
@@ -269,7 +268,7 @@ public class GardenPlant {
         List<BlockFace> placement = type.fruitPlacement().vectors();
         List<PlacedFruit> standing = new ArrayList<>();
         structure.forEachBlock(LEAVES, (x, y, z, state) -> {
-            Block leaf = structure.world().getBlockAt(x, y, z);
+            Block leaf = Objects.requireNonNull(structure.world()).getBlockAt(x, y, z);
             if (!Tag.LEAVES.isTagged(leaf.getType())) {
                 return true;
             }
@@ -286,7 +285,7 @@ public class GardenPlant {
         return standing;
     }
 
-    private List<PlacedFruit> placeFruits(int amount) {
+    private List<PlacedFruit> placeFruits(int threshold) {
         if (!structure.origin().isChunkLoaded() || !type.bearFruits() || !placedFruits.isEmpty()) {
             return List.of();
         }
@@ -297,16 +296,18 @@ public class GardenPlant {
         PlantItem fruit = type.fruitItem();
         List<BlockFace> placement = type.fruitPlacement().vectors();
         List<PlacedFruit> output = new ArrayList<>();
-        int[] count = {0};
+        // for lambda use
+        final int[] placedCount = {0};
+
         structure.forEachBlock((x, y, z, state) -> {
-            if (amount != -1 && count[0] >= amount) {
+            if (threshold != -1 && placedCount[0] >= threshold) {
                 return false;
             }
             Block block = world.getBlockAt(x, y, z);
             if (!Tag.LEAVES.isTagged(block.getType())) {
                 return true;
             }
-            if (amount == -1 && Material.FLOWERING_AZALEA_LEAVES != block.getType()) {
+            if (threshold == -1 && Material.FLOWERING_AZALEA_LEAVES != block.getType()) {
                 return true;
             }
             List<BlockFace> relatives = placement.stream()
@@ -318,7 +319,7 @@ public class GardenPlant {
             BlockFace chosenRelative = relatives.get(ThreadLocalRandom.current().nextInt(relatives.size()));
             fruit.fruitPlacement().place(block.getRelative(chosenRelative), chosenRelative, id, type)
                     .ifPresent(output::add);
-            count[0]++;
+            placedCount[0]++;
             return true;
         });
         this.structure.paste(); // Clear all bloom blocks

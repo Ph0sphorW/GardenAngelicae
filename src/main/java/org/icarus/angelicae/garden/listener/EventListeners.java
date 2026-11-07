@@ -49,6 +49,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
+@SuppressWarnings("UnstableApiUsage")
 public class EventListeners implements Listener {
 
     private final GardenConfig config;
@@ -220,21 +221,23 @@ public class EventListeners implements Listener {
         } else {
             PersistentDataContainer pdc = location.getChunk()
                     .getPersistentDataContainer();
-            List<GardenPlant> plants;
+            // The stored entries stay bytes: reading them back as plants would rebuild every plant in the
+            // chunk, and rebuilding one places its fruit into the world a second time.
+            List<byte[]> plants;
             try {
                 plants = pdc
                         .get(PlantPdcType.PLANT_KEY, PlantPdcType.PLANT_LIST_TYPE);
             } catch (IllegalArgumentException e) {
                 plants = null;
             }
-            List<GardenPlant> gardenPlants;
+            List<byte[]> stored;
             if (plants == null) {
-                gardenPlants = new ArrayList<>();
+                stored = new ArrayList<>();
             } else {
-                gardenPlants = new ArrayList<>(plants);
+                stored = new ArrayList<>(plants);
             }
-            gardenPlants.add(gardenPlant);
-            pdc.set(PlantPdcType.PLANT_KEY, PlantPdcType.PLANT_LIST_TYPE, gardenPlants);
+            stored.add(PlantPdcType.serialize(gardenPlant, pdc.getAdapterContext()));
+            pdc.set(PlantPdcType.PLANT_KEY, PlantPdcType.PLANT_LIST_TYPE, stored);
         }
 
         itemInHand.setAmount(itemInHand.getAmount() - 1);

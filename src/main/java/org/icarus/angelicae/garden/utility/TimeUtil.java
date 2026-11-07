@@ -16,6 +16,11 @@ public class TimeUtil {
         throw new IllegalStateException("Utility class");
     }
 
+    /**
+     * parses a formatted string to ticks
+     * @param timeString formatted string of time
+     * @return ticks that plants will go ripe
+     */
     public static int parseTime(String timeString) {
         Matcher daysMatcher = DAYS_PATTERN.matcher(timeString);
         if (daysMatcher.matches()) {

@@ -10,6 +10,8 @@ import org.bukkit.event.world.ChunkLoadEvent;
 import org.bukkit.event.world.ChunkUnloadEvent;
 import org.bukkit.event.world.WorldLoadEvent;
 import org.bukkit.event.world.WorldUnloadEvent;
+import org.bukkit.persistence.PersistentDataAdapterContext;
+import org.bukkit.persistence.PersistentDataContainer;
 import org.icarus.angelicae.garden.Garden;
 import org.icarus.angelicae.garden.PlantRegistry;
 import org.icarus.angelicae.garden.configuration.GardenConfig;
@@ -17,7 +19,9 @@ import org.icarus.angelicae.garden.persist.GardenPlantDataType;
 import org.icarus.angelicae.garden.persist.PlantPdcType;
 import org.icarus.angelicae.garden.persist.StorageSolution;
 import org.icarus.angelicae.garden.plant.GardenPlant;
+import org.icarus.angelicae.garden.utility.Logger;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -66,15 +70,30 @@ public record WorldEventListener(PlantRegistry registry, GardenPlantDataType gar
     }
 
     private List<GardenPlant> readChunkData(Chunk chunk) {
+        PersistentDataContainer pdc = chunk.getPersistentDataContainer();
+        List<byte[]> plants;
         try {
-            List<GardenPlant> plants = chunk
-                .getPersistentDataContainer()
-                .get(PlantPdcType.PLANT_KEY, PlantPdcType.PLANT_LIST_TYPE);
-            return plants == null ? List.of() : plants;
+            plants = pdc.get(PlantPdcType.PLANT_KEY, PlantPdcType.PLANT_LIST_TYPE);
         } catch (IllegalArgumentException e) {
             // The stored data does not match what this version expects, so there is nothing usable in it
             return List.of();
         }
+        if (plants == null) {
+            return List.of();
+        }
+        PersistentDataAdapterContext context = pdc.getAdapterContext();
+        List<GardenPlant> output = new ArrayList<>(plants.size());
+        for (byte[] stored : plants) {
+            try {
+                output.add(PlantPdcType.deserialize(stored, context));
+            } catch (RuntimeException e) {
+                // One entry this version can not read, such as a plant type that was removed, must not take
+                // the rest of the chunk's plants with it
+                Logger.logWarn("Ignoring a stored plant in chunk %d,%d of %s: %s".formatted(chunk.getX(),
+                    chunk.getZ(), chunk.getWorld().getName(), e.toString()));
+            }
+        }
+        return output;
     }
 
     /**
